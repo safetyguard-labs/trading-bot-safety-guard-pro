@@ -34,6 +34,13 @@ uvicorn app.main:app --reload
 
 Then open `http://127.0.0.1:8000/health`.
 
+## Free preview deployment
+
+The repository is structured for zero-configuration FastAPI deployment on
+Vercel. Production webhook events require a `GITHUB_WEBHOOK_SECRET` environment
+variable and are rejected when the secret is missing or the HMAC signature is
+invalid.
+
 ## Legal and support
 
 - [Privacy policy](docs/PRIVACY.md)
