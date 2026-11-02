@@ -2,6 +2,10 @@
 
 GitHub App and SaaS companion for **Trading Bot Safety Guard**. It helps trading-bot maintainers detect exposed credentials, unsafe live-exchange configuration, excessive leverage, and missing testnet safeguards.
 
+[Live app](https://trading-bot-safety-guard-pro.vercel.app/) · [Install GitHub App](https://github.com/apps/trading-bot-safety-guard-pro) · [Quickstart](docs/QUICKSTART.md) · [Operations](docs/OPERATIONS.md)
+
+> The analyzer is defensive static analysis. It never places trades and does not require exchange credentials.
+
 ## Product roadmap
 
 - Automatic repository audits after pushes and pull requests
@@ -20,9 +24,13 @@ GitHub App and SaaS companion for **Trading Bot Safety Guard**. It helps trading
 
 Paid plans will only be activated after GitHub publisher verification, financial onboarding, and the required Marketplace eligibility threshold.
 
-## Development status
+## Current capabilities
 
-This repository contains the initial free and open development scaffold. No exchange keys or customer credentials are stored.
+- Signed GitHub and Marketplace webhook verification
+- Defensive Binance and Bybit configuration analysis
+- Detection for likely embedded secrets, unsafe live mode, excessive leverage, and missing loss limits
+- Health/readiness endpoints and security headers
+- Responsive public landing page and interactive API documentation
 
 ## Local development
 
@@ -33,6 +41,12 @@ uvicorn app.main:app --reload
 ```
 
 Then open `http://127.0.0.1:8000/health`.
+
+Run tests with:
+
+```bash
+python -m pytest
+```
 
 ## Free preview deployment
 
