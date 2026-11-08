@@ -1,28 +1,43 @@
 # Trading Bot Safety Guard Pro
 
-GitHub App and SaaS companion for **Trading Bot Safety Guard**. It helps trading-bot maintainers detect exposed credentials, unsafe live-exchange configuration, excessive leverage, and missing testnet safeguards.
+Automated defensive reviews for algorithmic-trading repositories. **Trading Bot Safety Guard Pro** publishes a GitHub Check on pushes and pull requests to help teams catch exposed credentials, unsafe live-exchange configuration, excessive leverage, and missing risk controls before deployment.
 
 [Live app](https://trading-bot-safety-guard-pro.vercel.app/) · [Install GitHub App](https://github.com/apps/trading-bot-safety-guard-pro) · [Quickstart](docs/QUICKSTART.md) · [Operations](docs/OPERATIONS.md)
 
-> The analyzer is defensive static analysis. It never places trades and does not require exchange credentials.
+> Live now on GitHub. The analyzer performs defensive static analysis only: it never places trades, connects to an exchange, or requests exchange credentials.
+
+## Why install it
+
+- **Review every change automatically.** Results appear directly on commits and pull requests.
+- **Catch trading-specific risk.** Rules cover Binance, Bybit, live-mode acknowledgement, leverage, secrets, and loss controls.
+- **Keep credentials private.** The App uses short-lived GitHub installation tokens and never needs brokerage keys.
+- **Reduce noise.** Tests, documentation, and workflow files are excluded from operational trading analysis.
+
+## How it works
+
+1. Install the GitHub App on the repositories you choose.
+2. Push a commit or update a pull request.
+3. Review the **Trading Bot Safety Guard Pro** Check before merging or deploying.
+
+The current engine analyzes up to 20 changed text files and 100 KB per event. Findings include a rule identifier, severity, plain-language explanation, and remediation guidance.
 
 ## Product roadmap
 
-- Automatic repository audits after pushes and pull requests (implemented; activation requires GitHub App credentials and Checks write permission)
+- Automatic repository audits after pushes and pull requests (**available now**)
 - Central dashboard and audit history
 - Binance and Bybit safety policies
 - Team policy templates and alerts
 - GitHub Marketplace plan synchronization
 
-## Planned plans
+## Plans
 
 | Plan | Price | Included |
 | --- | ---: | --- |
-| Free | USD 0 | Basic repository audit |
+| Free — available now | USD 0 | Automatic repository audits and GitHub Checks |
 | Pro | USD 15/month | Continuous audits, history, alerts |
 | Team | USD 49/month | Organization policies and team reporting |
 
-Paid plans will only be activated after GitHub publisher verification, financial onboarding, and the required Marketplace eligibility threshold.
+Paid plans are a public roadmap and will be activated only after GitHub publisher verification, financial onboarding, and the required Marketplace eligibility threshold. No paid subscription is currently offered.
 
 ## Current capabilities
 
@@ -36,9 +51,9 @@ Paid plans will only be activated after GitHub publisher verification, financial
 - Bounded processing: 20 files and 100 KB of combined text per delivery
 - In-process operational counters at `/metrics`
 
-## GitHub Check activation
+## GitHub Check status
 
-The automation fails closed when credentials are absent. To activate Check Runs:
+The production installation is active and `/ready` reports `automation: configured`. For self-hosted deployments, activate Check Runs by following these steps:
 
 1. Grant the GitHub App **Checks: Read and write**.
 2. Generate a GitHub App private key.
