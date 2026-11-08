@@ -16,6 +16,7 @@ MAX_COMBINED_CONTENT = 100_000
 TEXT_EXTENSIONS = {
     ".env", ".ini", ".json", ".py", ".toml", ".txt", ".yaml", ".yml"
 }
+IGNORED_PATH_PREFIXES = (".github/", "docs/", "tests/")
 
 
 @dataclass
@@ -29,6 +30,14 @@ class GitHubEvent:
 
 def credentials_configured() -> bool:
     return bool(os.getenv("GITHUB_APP_ID") and os.getenv("GITHUB_APP_PRIVATE_KEY"))
+
+
+def is_analyzable_path(path: str) -> bool:
+    normalized = path.replace("\\", "/").lower()
+    if normalized.startswith(IGNORED_PATH_PREFIXES):
+        return False
+    filename = normalized.rsplit("/", 1)[-1]
+    return any(filename.endswith(extension) for extension in TEXT_EXTENSIONS)
 
 
 def event_from_payload(event: str, payload: dict[str, Any]) -> GitHubEvent | None:
@@ -129,8 +138,7 @@ def _analyze_files(client: httpx.Client, token: str, event: GitHubEvent) -> Anal
         if item.get("status") == "removed":
             continue
         path = item.get("filename", "")
-        filename = path.rsplit("/", 1)[-1].lower()
-        if not any(filename.endswith(extension) for extension in TEXT_EXTENSIONS):
+        if not is_analyzable_path(path):
             continue
         content = _file_content(client, token, event.repository, path, event.sha)
         if not content:

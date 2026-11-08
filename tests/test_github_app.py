@@ -1,4 +1,4 @@
-from app.github_app import event_from_payload
+from app.github_app import event_from_payload, is_analyzable_path
 
 
 def test_push_event_is_routable() -> None:
@@ -31,3 +31,11 @@ def test_irrelevant_event_is_ignored() -> None:
         "installation": {"id": 42},
         "repository": {"full_name": "safetyguard-labs/demo"},
     }) is None
+
+
+def test_analysis_path_filter_skips_non_runtime_files() -> None:
+    assert not is_analyzable_path(".github/workflows/test.yml")
+    assert not is_analyzable_path("tests/test_strategy.py")
+    assert not is_analyzable_path("docs/example.env")
+    assert is_analyzable_path("app/strategy.py")
+    assert is_analyzable_path("config/risk.yaml")
