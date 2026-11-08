@@ -80,3 +80,15 @@ def test_analyzer_flags_live_bybit_and_leverage() -> None:
     rules = {finding["rule"] for finding in response.json()["findings"]}
     assert "bybit.live-mode-confirmation" in rules
     assert "risk.excessive-leverage" in rules
+
+
+def test_analyzer_ignores_non_trading_configuration() -> None:
+    response = TestClient(app).post(
+        "/api/analyze",
+        json={
+            "exchange": "generic",
+            "content": "name: Test\non:\n  push:\njobs:\n  test:\n    runs-on: ubuntu-latest",
+        },
+    )
+    assert response.json()["status"] == "pass"
+    assert response.json()["findings"] == []
