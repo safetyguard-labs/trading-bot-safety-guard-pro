@@ -1,5 +1,6 @@
 import base64
 import os
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -17,6 +18,16 @@ TEXT_EXTENSIONS = {
     ".env", ".ini", ".json", ".py", ".toml", ".txt", ".yaml", ".yml"
 }
 IGNORED_PATH_PREFIXES = (".github/", "docs/", "tests/")
+EXCHANGE_PATTERNS = {
+    "binance": re.compile(
+        r"(?i)(?:\bfrom\s+binance\b|\bimport\s+binance\b|\bccxt\.binance\b|"
+        r"\bbinance[_-]?(?:api|client|exchange|key|secret)\b)"
+    ),
+    "bybit": re.compile(
+        r"(?i)(?:\bfrom\s+bybit\b|\bimport\s+bybit\b|\bccxt\.bybit\b|"
+        r"\bbybit[_-]?(?:api|client|exchange|key|secret)\b)"
+    ),
+}
 
 
 @dataclass
@@ -154,10 +165,9 @@ def _analyze_files(client: httpx.Client, token: str, event: GitHubEvent) -> Anal
     if not combined:
         return AnalysisResult(status="pass", exchange="generic", findings=[])
     exchange = "generic"
-    lower = combined.lower()
-    if "binance" in lower:
+    if EXCHANGE_PATTERNS["binance"].search(combined):
         exchange = "binance"
-    elif "bybit" in lower:
+    elif EXCHANGE_PATTERNS["bybit"].search(combined):
         exchange = "bybit"
     return analyze_trading_config(AnalysisRequest(exchange=exchange, content=combined))
 

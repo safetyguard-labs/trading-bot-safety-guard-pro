@@ -92,3 +92,17 @@ def test_analyzer_ignores_non_trading_configuration() -> None:
     )
     assert response.json()["status"] == "pass"
     assert response.json()["findings"] == []
+
+
+def test_analyzer_does_not_treat_marketing_copy_as_runtime_config() -> None:
+    response = TestClient(app).post(
+        "/api/analyze",
+        json={
+            "exchange": "generic",
+            "content": (
+                "Trading Bot Safety Guard reviews Binance and Bybit projects "
+                "before code reaches production. It checks missing loss controls."
+            ),
+        },
+    )
+    assert response.json()["status"] == "pass"

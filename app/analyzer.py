@@ -32,6 +32,10 @@ TRADING_CONTEXT_PATTERN = re.compile(
     r"(?i)\b(binance|bybit|exchange|trading|order|position|leverage|"
     r"testnet|sandbox|mainnet|stop[_-]?loss|take[_-]?profit)\b"
 )
+RISK_CONFIGURATION_PATTERN = re.compile(
+    r"(?i)\b(leverage|testnet|sandbox|mainnet|live|production|position|"
+    r"place[_-]?order|create[_-]?order|execute[_-]?trade|strategy)\b\s*(?:[:=]|\()"
+)
 
 
 def analyze_trading_config(payload: AnalysisRequest) -> AnalysisResult:
@@ -40,6 +44,9 @@ def analyze_trading_config(payload: AnalysisRequest) -> AnalysisResult:
     findings: list[Finding] = []
     trading_context = (
         payload.exchange != "generic" or bool(TRADING_CONTEXT_PATTERN.search(text))
+    )
+    risk_configuration_context = (
+        payload.exchange != "generic" or bool(RISK_CONFIGURATION_PATTERN.search(text))
     )
 
     if any(pattern.search(text) for pattern in SECRET_PATTERNS):
@@ -70,7 +77,7 @@ def analyze_trading_config(payload: AnalysisRequest) -> AnalysisResult:
             remediation="Set a documented leverage ceiling of 10x or lower and enforce it in code.",
         ))
 
-    if trading_context and not re.search(
+    if risk_configuration_context and not re.search(
         r"(?i)(max[_-]?(daily[_-]?)?loss|drawdown[_-]?limit|kill[_-]?switch)",
         text,
     ):
