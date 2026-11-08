@@ -21,8 +21,12 @@ def test_landing_page() -> None:
 
 def test_ready_reports_missing_secret(monkeypatch) -> None:
     monkeypatch.delenv("GITHUB_WEBHOOK_SECRET", raising=False)
+    monkeypatch.delenv("GITHUB_APP_ID", raising=False)
+    monkeypatch.delenv("GITHUB_APP_PRIVATE_KEY", raising=False)
     response = TestClient(app).get("/ready")
-    assert response.json() == {"status": "ready", "webhook": "missing"}
+    assert response.json() == {
+        "status": "ready", "webhook": "missing", "automation": "disabled"
+    }
 
 
 def test_webhook_requires_configuration(monkeypatch) -> None:
@@ -47,7 +51,9 @@ def test_webhook_accepts_valid_signature(monkeypatch) -> None:
         },
     )
     assert response.status_code == 200
-    assert response.json() == {"status": "accepted", "event": "installation"}
+    assert response.json() == {
+        "status": "accepted", "event": "installation", "automation": "disabled"
+    }
 
 
 def test_analyzer_blocks_exposed_secret() -> None:

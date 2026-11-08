@@ -3,11 +3,13 @@ import hmac
 import logging
 import os
 import uuid
+from collections import Counter
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from app.analyzer import AnalysisRequest, AnalysisResult, analyze_trading_config
+from app.github_app import credentials_configured, event_from_payload, process_github_event
 
 
 app = FastAPI(
@@ -17,6 +19,7 @@ app = FastAPI(
 )
 
 logger = logging.getLogger("safety_guard")
+metrics: Counter[str] = Counter()
 
 
 @app.middleware("http")
@@ -40,7 +43,18 @@ def health() -> dict[str, str]:
 @app.get("/ready")
 def ready() -> dict[str, str]:
     webhook = "configured" if os.getenv("GITHUB_WEBHOOK_SECRET") else "missing"
-    return {"status": "ready", "webhook": webhook}
+    automation = "configured" if credentials_configured() else "disabled"
+    return {"status": "ready", "webhook": webhook, "automation": automation}
+
+
+@app.get("/metrics")
+def service_metrics() -> dict[str, int]:
+    return {
+        "webhooks_accepted": metrics["webhooks_accepted"],
+        "checks_completed": metrics["checks_completed"],
+        "checks_failed": metrics["checks_failed"],
+        "analyses_requested": metrics["analyses_requested"],
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -50,6 +64,7 @@ def root() -> str:
 
 @app.post("/api/analyze", response_model=AnalysisResult)
 def analyze(payload: AnalysisRequest) -> AnalysisResult:
+    metrics["analyses_requested"] += 1
     return analyze_trading_config(payload)
 
 
@@ -69,7 +84,23 @@ async def github_webhook(request: Request) -> dict[str, str]:
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
     event = request.headers.get("x-github-event", "unknown")
-    return {"status": "accepted", "event": event}
+    metrics["webhooks_accepted"] += 1
+    payload = await request.json()
+    github_event = event_from_payload(event, payload)
+    if github_event and credentials_configured():
+        try:
+            result = process_github_event(github_event)
+            metrics["checks_completed"] += 1
+            return {"status": "processed", "event": event, "result": result["status"]}
+        except Exception:
+            metrics["checks_failed"] += 1
+            logger.exception("github check processing failed")
+            raise HTTPException(status_code=502, detail="GitHub check processing failed")
+    return {
+        "status": "accepted",
+        "event": event,
+        "automation": "enabled" if credentials_configured() else "disabled",
+    }
 
 
 LANDING_PAGE = """<!doctype html>

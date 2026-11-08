@@ -8,7 +8,7 @@ GitHub App and SaaS companion for **Trading Bot Safety Guard**. It helps trading
 
 ## Product roadmap
 
-- Automatic repository audits after pushes and pull requests
+- Automatic repository audits after pushes and pull requests (implemented; activation requires GitHub App credentials and Checks write permission)
 - Central dashboard and audit history
 - Binance and Bybit safety policies
 - Team policy templates and alerts
@@ -31,6 +31,21 @@ Paid plans will only be activated after GitHub publisher verification, financial
 - Detection for likely embedded secrets, unsafe live mode, excessive leverage, and missing loss limits
 - Health/readiness endpoints and security headers
 - Responsive public landing page and interactive API documentation
+- Automatic changed-file analysis for push and pull-request events
+- GitHub Check Run results with severity summaries
+- Bounded processing: 20 files and 100 KB of combined text per delivery
+- In-process operational counters at `/metrics`
+
+## GitHub Check activation
+
+The automation fails closed when credentials are absent. To activate Check Runs:
+
+1. Grant the GitHub App **Checks: Read and write**.
+2. Generate a GitHub App private key.
+3. Store `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY` in the deployment environment.
+4. Redeploy and verify `/ready` reports `automation: configured`.
+
+Never commit the private key. The service exchanges its short-lived App JWT for an installation token and reads only the changed files needed for the review.
 
 ## Local development
 
