@@ -52,6 +52,7 @@ Paid plans are a public roadmap and will be activated only after GitHub publishe
 - In-process operational counters at `/metrics`
 - Privacy-preserving audit dashboard at `/dashboard`
 - Bounded recent-audit metadata at `/api/audits` (temporary MVP storage)
+- Optional durable PostgreSQL audit history through `DATABASE_URL`
 
 ## GitHub Check status
 
@@ -79,6 +80,11 @@ Run tests with:
 ```bash
 python -m pytest
 ```
+
+To persist audit metadata, provide a PostgreSQL `DATABASE_URL`. The service
+creates its audit table and index automatically. If the variable is absent or
+the database is unavailable during startup, it safely falls back to bounded
+temporary storage and reports the active mode through `/ready`.
 
 ## Free preview deployment
 

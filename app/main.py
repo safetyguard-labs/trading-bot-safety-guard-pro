@@ -45,7 +45,12 @@ def health() -> dict[str, str]:
 def ready() -> dict[str, str]:
     webhook = "configured" if os.getenv("GITHUB_WEBHOOK_SECRET") else "missing"
     automation = "configured" if credentials_configured() else "disabled"
-    return {"status": "ready", "webhook": webhook, "automation": automation}
+    return {
+        "status": "ready",
+        "webhook": webhook,
+        "automation": automation,
+        "history": audit_history.storage,
+    }
 
 
 @app.get("/metrics")
@@ -87,7 +92,7 @@ def audits(limit: int = 25) -> dict[str, object]:
             }
             for record in audit_history.list(limit)
         ],
-        "storage": "temporary",
+        "storage": audit_history.storage,
     }
 
 

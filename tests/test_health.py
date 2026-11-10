@@ -4,7 +4,7 @@ import hmac
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.history import audit_history
+from app.history import MemoryAuditHistory, audit_history, build_audit_history
 
 
 def test_health() -> None:
@@ -52,8 +52,16 @@ def test_ready_reports_missing_secret(monkeypatch) -> None:
     monkeypatch.delenv("GITHUB_APP_PRIVATE_KEY", raising=False)
     response = TestClient(app).get("/ready")
     assert response.json() == {
-        "status": "ready", "webhook": "missing", "automation": "disabled"
+        "status": "ready", "webhook": "missing", "automation": "disabled",
+        "history": "temporary",
     }
+
+
+def test_history_uses_memory_without_database_url(monkeypatch) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    history = build_audit_history()
+    assert isinstance(history, MemoryAuditHistory)
+    assert history.storage == "temporary"
 
 
 def test_webhook_requires_configuration(monkeypatch) -> None:
