@@ -197,6 +197,10 @@ def process_github_event(event: GitHubEvent) -> dict[str, Any]:
         check_id = check.json()["id"]
         try:
             result = _analyze_files(client, token, event)
+            severity = {
+                name: sum(finding.severity == name for finding in result.findings)
+                for name in ("critical", "high", "medium", "low")
+            }
             conclusion = "success" if result.status == "pass" else "failure"
             title = "Safety review passed" if result.status == "pass" else "Safety review needs attention"
             client.patch(
@@ -212,7 +216,13 @@ def process_github_event(event: GitHubEvent) -> dict[str, Any]:
                     },
                 },
             ).raise_for_status()
-            return {"status": result.status, "findings": len(result.findings), "check_id": check_id}
+            return {
+                "status": result.status,
+                "exchange": result.exchange,
+                "findings": len(result.findings),
+                "check_id": check_id,
+                **severity,
+            }
         except Exception:
             client.patch(
                 f"{API_ROOT}/repos/{event.repository}/check-runs/{check_id}",

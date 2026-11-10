@@ -4,6 +4,7 @@ import hmac
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.history import audit_history
 
 
 def test_health() -> None:
@@ -17,6 +18,32 @@ def test_landing_page() -> None:
     assert response.status_code == 200
     assert "Ship bots with" in response.text
     assert response.headers["x-frame-options"] == "DENY"
+
+
+def test_dashboard_and_empty_history() -> None:
+    audit_history._records.clear()
+    client = TestClient(app)
+    dashboard = client.get("/dashboard")
+    history = client.get("/api/audits")
+    assert dashboard.status_code == 200
+    assert "Repository safety overview" in dashboard.text
+    assert history.status_code == 200
+    assert history.json()["summary"]["total"] == 0
+    assert history.json()["storage"] == "temporary"
+
+
+def test_api_analysis_adds_history_without_storing_content() -> None:
+    audit_history._records.clear()
+    secret = 'API_SECRET="this-is-a-real-looking-secret"'
+    client = TestClient(app)
+    response = client.post("/api/analyze", json={"exchange": "binance", "content": secret})
+    assert response.status_code == 200
+    history = client.get("/api/audits").json()
+    assert history["summary"]["total"] == 1
+    assert history["audits"][0]["status"] == "block"
+    assert history["audits"][0]["critical"] == 1
+    assert "repository" not in history["audits"][0]
+    assert secret not in str(history)
 
 
 def test_ready_reports_missing_secret(monkeypatch) -> None:

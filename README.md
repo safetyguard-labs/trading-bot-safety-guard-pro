@@ -50,6 +50,8 @@ Paid plans are a public roadmap and will be activated only after GitHub publishe
 - GitHub Check Run results with severity summaries
 - Bounded processing: 20 files and 100 KB of combined text per delivery
 - In-process operational counters at `/metrics`
+- Privacy-preserving audit dashboard at `/dashboard`
+- Bounded recent-audit metadata at `/api/audits` (temporary MVP storage)
 
 ## GitHub Check status
 
