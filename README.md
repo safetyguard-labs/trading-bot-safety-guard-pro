@@ -53,6 +53,7 @@ Paid plans are a public roadmap and will be activated only after GitHub publishe
 - Privacy-preserving audit dashboard at `/dashboard`
 - Bounded recent-audit metadata at `/api/audits` (temporary MVP storage)
 - Optional durable PostgreSQL audit history through `DATABASE_URL`
+- GitHub OAuth login with server-side sessions and installation-scoped history
 
 ## GitHub Check status
 
@@ -85,6 +86,12 @@ To persist audit metadata, provide a PostgreSQL `DATABASE_URL`. The service
 creates its audit table and index automatically. If the variable is absent or
 the database is unavailable during startup, it safely falls back to bounded
 temporary storage and reports the active mode through `/ready`.
+
+Private dashboards require `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`,
+`SESSION_SECRET`, and `DATABASE_URL`. OAuth access tokens are used only during
+login to identify the user and their GitHub App installation IDs; they are not
+stored. Session identifiers are hashed in PostgreSQL, and audit queries are
+restricted to the authenticated user's installations.
 
 ## Free preview deployment
 

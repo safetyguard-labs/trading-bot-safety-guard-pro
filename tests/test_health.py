@@ -4,7 +4,8 @@ import hmac
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.history import MemoryAuditHistory, audit_history, build_audit_history
+from app.auth import create_oauth_state, verify_oauth_state
+from app.history import AuditRecord, MemoryAuditHistory, audit_history, build_audit_history
 
 
 def test_health() -> None:
@@ -27,9 +28,7 @@ def test_dashboard_and_empty_history() -> None:
     history = client.get("/api/audits")
     assert dashboard.status_code == 200
     assert "Repository safety overview" in dashboard.text
-    assert history.status_code == 200
-    assert history.json()["summary"]["total"] == 0
-    assert history.json()["storage"] == "temporary"
+    assert history.status_code == 401
 
 
 def test_api_analysis_adds_history_without_storing_content() -> None:
@@ -38,12 +37,11 @@ def test_api_analysis_adds_history_without_storing_content() -> None:
     client = TestClient(app)
     response = client.post("/api/analyze", json={"exchange": "binance", "content": secret})
     assert response.status_code == 200
-    history = client.get("/api/audits").json()
-    assert history["summary"]["total"] == 1
-    assert history["audits"][0]["status"] == "block"
-    assert history["audits"][0]["critical"] == 1
-    assert "repository" not in history["audits"][0]
-    assert secret not in str(history)
+    records = audit_history.list()
+    assert len(records) == 1
+    assert records[0].status == "block"
+    assert records[0].critical == 1
+    assert secret not in str(records)
 
 
 def test_ready_reports_missing_secret(monkeypatch) -> None:
@@ -53,7 +51,7 @@ def test_ready_reports_missing_secret(monkeypatch) -> None:
     response = TestClient(app).get("/ready")
     assert response.json() == {
         "status": "ready", "webhook": "missing", "automation": "disabled",
-        "history": "temporary",
+        "history": "temporary", "auth": "disabled",
     }
 
 
@@ -62,6 +60,27 @@ def test_history_uses_memory_without_database_url(monkeypatch) -> None:
     history = build_audit_history()
     assert isinstance(history, MemoryAuditHistory)
     assert history.storage == "temporary"
+
+
+def test_memory_history_filters_by_installation() -> None:
+    history = MemoryAuditHistory()
+    history.add(AuditRecord(
+        source="github", installation_id=10, repository="private/one",
+        exchange="binance", status="pass",
+    ))
+    history.add(AuditRecord(
+        source="github", installation_id=20, repository="private/two",
+        exchange="bybit", status="review", findings=1,
+    ))
+    assert [record.installation_id for record in history.list(25, {20})] == [20]
+    assert history.summary({10})["total"] == 1
+
+
+def test_oauth_state_is_signed_and_expires_safely(monkeypatch) -> None:
+    monkeypatch.setenv("SESSION_SECRET", "test-session-secret")
+    state = create_oauth_state()
+    assert verify_oauth_state(state)
+    assert not verify_oauth_state(state + "tampered")
 
 
 def test_webhook_requires_configuration(monkeypatch) -> None:

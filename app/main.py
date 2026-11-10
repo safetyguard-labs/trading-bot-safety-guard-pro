@@ -5,10 +5,22 @@ import os
 import uuid
 from collections import Counter
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi import Cookie, FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.analyzer import AnalysisRequest, AnalysisResult, analyze_trading_config
+from app.auth import (
+    SESSION_COOKIE,
+    STATE_COOKIE,
+    SESSION_SECONDS,
+    auth_configured,
+    complete_github_login,
+    create_oauth_state,
+    current_session,
+    github_authorize_url,
+    session_store,
+    verify_oauth_state,
+)
 from app.github_app import credentials_configured, event_from_payload, process_github_event
 from app.history import AuditRecord, audit_history
 
@@ -50,6 +62,7 @@ def ready() -> dict[str, str]:
         "webhook": webhook,
         "automation": automation,
         "history": audit_history.storage,
+        "auth": "configured" if auth_configured() else "disabled",
     }
 
 
@@ -74,9 +87,15 @@ def dashboard() -> str:
 
 
 @app.get("/api/audits")
-def audits(limit: int = 25) -> dict[str, object]:
+def audits(
+    limit: int = 25,
+    session_id: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    session = current_session(session_id)
+    if not session:
+        raise HTTPException(status_code=401, detail="GitHub sign-in required")
     return {
-        "summary": audit_history.summary(),
+        "summary": audit_history.summary(session.installation_ids),
         "audits": [
             {
                 "id": record.id,
@@ -90,10 +109,73 @@ def audits(limit: int = 25) -> dict[str, object]:
                 "medium": record.medium,
                 "low": record.low,
             }
-            for record in audit_history.list(limit)
+            for record in audit_history.list(limit, session.installation_ids)
         ],
         "storage": audit_history.storage,
     }
+
+
+@app.get("/api/me")
+def me(
+    session_id: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    session = current_session(session_id)
+    if not session:
+        raise HTTPException(status_code=401, detail="GitHub sign-in required")
+    return {
+        "login": session.login,
+        "avatar_url": session.avatar_url,
+        "installations": len(session.installation_ids),
+    }
+
+
+@app.get("/auth/github")
+def github_login() -> RedirectResponse:
+    if not auth_configured():
+        raise HTTPException(status_code=503, detail="GitHub login is not configured")
+    state = create_oauth_state()
+    response = RedirectResponse(github_authorize_url(state), status_code=302)
+    response.set_cookie(
+        STATE_COOKIE, state, max_age=600, httponly=True, secure=True, samesite="lax"
+    )
+    return response
+
+
+@app.get("/auth/callback")
+def github_callback(
+    code: str,
+    state: str,
+    state_cookie: str | None = Cookie(default=None, alias=STATE_COOKIE),
+) -> RedirectResponse:
+    if not state_cookie or state != state_cookie or not verify_oauth_state(state):
+        raise HTTPException(status_code=400, detail="Invalid OAuth state")
+    try:
+        session = complete_github_login(code)
+    except Exception:
+        logger.exception("GitHub OAuth callback failed")
+        raise HTTPException(status_code=502, detail="GitHub login failed")
+    response = RedirectResponse("/dashboard", status_code=302)
+    response.delete_cookie(STATE_COOKIE)
+    response.set_cookie(
+        SESSION_COOKIE,
+        session.session_id,
+        max_age=SESSION_SECONDS,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+    )
+    return response
+
+
+@app.post("/auth/logout")
+def logout(
+    session_id: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> RedirectResponse:
+    if session_id:
+        session_store.delete(session_id)
+    response = RedirectResponse("/", status_code=303)
+    response.delete_cookie(SESSION_COOKIE)
+    return response
 
 
 @app.post("/api/analyze", response_model=AnalysisResult)
@@ -140,6 +222,7 @@ async def github_webhook(request: Request) -> dict[str, str]:
             metrics["checks_completed"] += 1
             audit_history.add(AuditRecord(
                 source="github",
+                installation_id=github_event.installation_id,
                 repository=github_event.repository,
                 reference=github_event.sha[:12],
                 exchange=result.get("exchange", "generic"),
@@ -205,6 +288,6 @@ DASHBOARD_PAGE = """<!doctype html>
     :root{--bg:#07111f;--panel:#0d1d31;--line:#1e3853;--text:#eef7ff;--muted:#9bb2c8;--cyan:#42d9dc;--lime:#98f5a9;--warn:#ffd37b;--danger:#ff8c8c}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 85% 0,#153a51 0,transparent 35%),var(--bg);color:var(--text);font:15px/1.5 Inter,system-ui,sans-serif}.wrap{width:min(1120px,92%);margin:auto}.nav{display:flex;justify-content:space-between;align-items:center;padding:24px 0}.nav a{color:var(--cyan);text-decoration:none}.badge{border:1px solid var(--line);border-radius:999px;padding:6px 12px;color:var(--lime);font-size:.82rem}h1{font-size:clamp(2rem,5vw,3.8rem);margin:42px 0 8px}p{color:var(--muted)}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:32px 0}.card{background:linear-gradient(145deg,#10243a,#091626);border:1px solid var(--line);border-radius:16px;padding:20px}.number{font-size:2rem;font-weight:800}.table{overflow:auto;border:1px solid var(--line);border-radius:16px;margin:20px 0 60px}table{width:100%;border-collapse:collapse;background:#091626}th,td{text-align:left;padding:14px;border-bottom:1px solid var(--line);white-space:nowrap}th{color:var(--muted);font-size:.78rem;text-transform:uppercase}.status{font-weight:750}.pass{color:var(--lime)}.review{color:var(--warn)}.block,.error{color:var(--danger)}.empty{text-align:center;padding:45px;color:var(--muted)}@media(max-width:700px){.stats{grid-template-columns:repeat(2,1fr)}}
   </style>
 </head>
-<body><div class="wrap"><nav class="nav"><strong>SAFETYGUARD LABS</strong><a href="/">← Product page</a></nav><div class="badge">AUDIT HISTORY · MVP</div><h1>Repository safety overview</h1><p>Recent defensive checks. Repository names, source code and credentials are never exposed in this public history.</p><section class="stats"><div class="card"><div class="number" id="total">–</div><p>Total audits</p></div><div class="card"><div class="number pass" id="passed">–</div><p>Passed</p></div><div class="card"><div class="number review" id="attention">–</div><p>Needs attention</p></div><div class="card"><div class="number" id="findings">–</div><p>Findings</p></div></section><h2>Recent audits</h2><div class="table"><table><thead><tr><th>Time</th><th>Source</th><th>Exchange</th><th>Status</th><th>Findings</th></tr></thead><tbody id="rows"><tr><td colspan="5" class="empty">Loading audit history…</td></tr></tbody></table></div></div><script>
-async function load(){try{const r=await fetch('/api/audits');const d=await r.json();total.textContent=d.summary.total;passed.textContent=d.summary.passed;attention.textContent=d.summary.needs_attention;findings.textContent=d.summary.findings;rows.innerHTML=d.audits.length?d.audits.map(a=>`<tr><td>${new Date(a.created_at).toLocaleString()}</td><td>${a.source}</td><td>${a.exchange}</td><td class="status ${a.status}">${a.status.toUpperCase()}</td><td>${a.findings}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">No audits recorded in this service instance yet.</td></tr>'}catch(e){rows.innerHTML='<tr><td colspan="5" class="empty">Audit history is temporarily unavailable.</td></tr>'}}load();setInterval(load,30000)
+<body><div class="wrap"><nav class="nav"><strong>SAFETYGUARD LABS</strong><span id="account"><a href="/">← Product page</a></span></nav><div class="badge">PRIVATE AUDIT HISTORY</div><h1>Repository safety overview</h1><p>Recent defensive checks for your GitHub App installations. Repository names, source code and credentials are never exposed.</p><section class="stats"><div class="card"><div class="number" id="total">–</div><p>Total audits</p></div><div class="card"><div class="number pass" id="passed">–</div><p>Passed</p></div><div class="card"><div class="number review" id="attention">–</div><p>Needs attention</p></div><div class="card"><div class="number" id="findings">–</div><p>Findings</p></div></section><h2>Recent audits</h2><div class="table"><table><thead><tr><th>Time</th><th>Source</th><th>Exchange</th><th>Status</th><th>Findings</th></tr></thead><tbody id="rows"><tr><td colspan="5" class="empty">Loading your GitHub installations…</td></tr></tbody></table></div></div><script>
+async function load(){try{const m=await fetch('/api/me');if(m.status===401){location.href='/auth/github';return}if(!m.ok)throw new Error();const me=await m.json();account.innerHTML=`<span>@${me.login} · ${me.installations} installation(s)</span>`;const r=await fetch('/api/audits');if(!r.ok)throw new Error();const d=await r.json();total.textContent=d.summary.total;passed.textContent=d.summary.passed;attention.textContent=d.summary.needs_attention;findings.textContent=d.summary.findings;rows.innerHTML=d.audits.length?d.audits.map(a=>`<tr><td>${new Date(a.created_at).toLocaleString()}</td><td>${a.source}</td><td>${a.exchange}</td><td class="status ${a.status}">${a.status.toUpperCase()}</td><td>${a.findings}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">No audits recorded for your installations yet.</td></tr>'}catch(e){rows.innerHTML='<tr><td colspan="5" class="empty">The private audit history is temporarily unavailable.</td></tr>'}}load();setInterval(load,30000)
 </script></body></html>"""

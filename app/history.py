@@ -16,6 +16,7 @@ class AuditRecord(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex[:12])
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     source: Literal["github", "api"]
+    installation_id: int | None = None
     repository: str
     reference: str | None = None
     exchange: str
@@ -31,8 +32,10 @@ class AuditHistoryStore(Protocol):
     storage: str
 
     def add(self, record: AuditRecord) -> AuditRecord: ...
-    def list(self, limit: int = 25) -> list[AuditRecord]: ...
-    def summary(self) -> dict[str, int]: ...
+    def list(
+        self, limit: int = 25, installation_ids: set[int] | None = None
+    ) -> list[AuditRecord]: ...
+    def summary(self, installation_ids: set[int] | None = None) -> dict[str, int]: ...
 
 
 def _summary(records: list[AuditRecord]) -> dict[str, int]:
@@ -61,15 +64,21 @@ class MemoryAuditHistory:
             self._records.appendleft(record)
         return record
 
-    def list(self, limit: int = 25) -> list[AuditRecord]:
+    def list(
+        self, limit: int = 25, installation_ids: set[int] | None = None
+    ) -> list[AuditRecord]:
         safe_limit = max(1, min(limit, 100))
         with self._lock:
-            return list(self._records)[:safe_limit]
-
-    def summary(self) -> dict[str, int]:
-        with self._lock:
             records = list(self._records)
-        return _summary(records)
+        if installation_ids is not None:
+            records = [
+                record for record in records
+                if record.installation_id in installation_ids
+            ]
+        return records[:safe_limit]
+
+    def summary(self, installation_ids: set[int] | None = None) -> dict[str, int]:
+        return _summary(self.list(100, installation_ids))
 
 
 class PostgresAuditHistory:
@@ -88,6 +97,7 @@ class PostgresAuditHistory:
                     id VARCHAR(12) PRIMARY KEY,
                     created_at TIMESTAMPTZ NOT NULL,
                     source VARCHAR(16) NOT NULL,
+                    installation_id BIGINT,
                     repository TEXT NOT NULL,
                     reference TEXT,
                     exchange VARCHAR(32) NOT NULL,
@@ -103,6 +113,14 @@ class PostgresAuditHistory:
                 CREATE INDEX IF NOT EXISTS safety_guard_audits_created_at_idx
                 ON safety_guard_audits (created_at DESC)
             """)
+            connection.execute("""
+                ALTER TABLE safety_guard_audits
+                ADD COLUMN IF NOT EXISTS installation_id BIGINT
+            """)
+            connection.execute("""
+                CREATE INDEX IF NOT EXISTS safety_guard_audits_installation_idx
+                ON safety_guard_audits (installation_id, created_at DESC)
+            """)
 
     def _connect(self):
         return self._psycopg.connect(self._database_url, connect_timeout=5)
@@ -111,50 +129,50 @@ class PostgresAuditHistory:
         with self._connect() as connection:
             connection.execute(
                 """INSERT INTO safety_guard_audits
-                (id, created_at, source, repository, reference, exchange, status,
+                (id, created_at, source, installation_id, repository, reference, exchange, status,
                  findings, critical, high, medium, low)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (id) DO NOTHING""",
                 (
-                    record.id, record.created_at, record.source, record.repository,
+                    record.id, record.created_at, record.source, record.installation_id,
+                    record.repository,
                     record.reference, record.exchange, record.status, record.findings,
                     record.critical, record.high, record.medium, record.low,
                 ),
             )
         return record
 
-    def list(self, limit: int = 25) -> list[AuditRecord]:
+    def list(
+        self, limit: int = 25, installation_ids: set[int] | None = None
+    ) -> list[AuditRecord]:
         safe_limit = max(1, min(limit, 100))
+        where = ""
+        params: tuple[object, ...]
+        if installation_ids is None:
+            params = (safe_limit,)
+        elif not installation_ids:
+            return []
+        else:
+            where = "WHERE installation_id = ANY(%s)"
+            params = (list(installation_ids), safe_limit)
         with self._connect() as connection:
             rows = connection.execute(
-                """SELECT id, created_at, source, repository, reference, exchange,
+                f"""SELECT id, created_at, source, installation_id, repository, reference, exchange,
                 status, findings, critical, high, medium, low
-                FROM safety_guard_audits ORDER BY created_at DESC LIMIT %s""",
-                (safe_limit,),
+                FROM safety_guard_audits {where} ORDER BY created_at DESC LIMIT %s""",
+                params,
             ).fetchall()
         return [
             AuditRecord(
-                id=row[0], created_at=row[1], source=row[2], repository=row[3],
-                reference=row[4], exchange=row[5], status=row[6], findings=row[7],
-                critical=row[8], high=row[9], medium=row[10], low=row[11],
+                id=row[0], created_at=row[1], source=row[2], installation_id=row[3],
+                repository=row[4], reference=row[5], exchange=row[6], status=row[7],
+                findings=row[8], critical=row[9], high=row[10], medium=row[11], low=row[12],
             )
             for row in rows
         ]
 
-    def summary(self) -> dict[str, int]:
-        with self._connect() as connection:
-            row = connection.execute("""
-                SELECT COUNT(*),
-                       COUNT(*) FILTER (WHERE status = 'pass'),
-                       COUNT(*) FILTER (WHERE status IN ('review', 'block')),
-                       COUNT(*) FILTER (WHERE status = 'error'),
-                       COALESCE(SUM(findings), 0)
-                FROM safety_guard_audits
-            """).fetchone()
-        return {
-            "total": row[0], "passed": row[1], "needs_attention": row[2],
-            "failed": row[3], "findings": row[4],
-        }
+    def summary(self, installation_ids: set[int] | None = None) -> dict[str, int]:
+        return _summary(self.list(100, installation_ids))
 
 
 def build_audit_history() -> AuditHistoryStore:
